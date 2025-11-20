@@ -1,1 +1,16 @@
+{
+  "name": "Beat Analyzer",
+  "short_name": "BeatTool",
+  "start_url": "beat-analyzer.html",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f41f.png",
+      "sizes": "72x72",
+      "type": "image/png"
+    }
+  ]
+}
 
