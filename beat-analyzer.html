@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>BEAT 5 分鐘簡易支撐 / 壓力分析</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Chart.js 用來畫圖 -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
@@ -93,4 +94,193 @@
       <label for="limit">K 總數量：</label>
       <select id="limit">
         <option value="50">50 根 (短線)</option>
-        <op
+        <option value="100" selected>100 根</option>
+        <option value="200">200 根</option>
+      </select>
+      <button id="loadBtn">重新載入</button>
+    </div>
+    <small>資料來源：Binance 公開 API，時間週期固定為 5m。僅供技術研究，非投資建議。</small>
+  </div>
+
+  <div class="card">
+    <div class="info-grid">
+      <div class="info-item">
+        <span class="label">目前價格</span>
+        <span id="currentPrice" class="value-neutral">--</span>
+      </div>
+      <div class="info-item">
+        <span class="label">簡易支撐（近 N 根較低價平均）</span>
+        <span id="support" class="value-up">--</span>
+      </div>
+      <div class="info-item">
+        <span class="label">簡易壓力（近 N 根較高價平均）</span>
+        <span id="resistance" class="value-down">--</span>
+      </div>
+      <div class="info-item">
+        <span class="label">目前位置判斷</span>
+        <span id="position" class="value-neutral">--</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <canvas id="priceChart"></canvas>
+  </div>
+
+  <script>
+    const apiBase = "https://api.binance.com";
+
+    const symbolInput = document.getElementById("symbol");
+    const limitSelect = document.getElementById("limit");
+    const loadBtn = document.getElementById("loadBtn");
+
+    const currentPriceEl = document.getElementById("currentPrice");
+    const supportEl = document.getElementById("support");
+    const resistanceEl = document.getElementById("resistance");
+    const positionEl = document.getElementById("position");
+
+    let chart;
+
+    async function fetchKlines(symbol, interval = "5m", limit = 100) {
+      const url = `${apiBase}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error("Binance API error: " + res.status);
+      }
+      return res.json();
+    }
+
+    function calcSupportResistance(klines) {
+      const lows = klines.map(k => parseFloat(k[3]));  // low
+      const highs = klines.map(k => parseFloat(k[2])); // high
+
+      const sortAsc = arr => [...arr].sort((a, b) => a - b);
+      const sortDesc = arr => [...arr].sort((a, b) => b - a);
+
+      const n = Math.min(5, klines.length);
+
+      const lowSamples = sortAsc(lows).slice(0, n);
+      const highSamples = sortDesc(highs).slice(0, n);
+
+      const avg = arr => arr.reduce((s, v) => s + v, 0) / arr.length;
+
+      const support = avg(lowSamples);
+      const resistance = avg(highSamples);
+
+      return { support, resistance };
+    }
+
+    function updateSummary(lastClose, support, resistance) {
+      const format = v => (v || v === 0) ? v.toFixed(5) : "--";
+
+      currentPriceEl.textContent = format(lastClose);
+      supportEl.textContent = format(support);
+      resistanceEl.textContent = format(resistance);
+
+      if (!lastClose || !support || !resistance) {
+        positionEl.textContent = "--";
+        positionEl.className = "value-neutral";
+        return;
+      }
+
+      const range = resistance - support;
+      const pos = (lastClose - support) / (range || 1);
+
+      if (lastClose <= support * 1.01) {
+        positionEl.textContent = "接近支撐區（容易反彈也容易跌破）";
+        positionEl.className = "value-up";
+      } else if (lastClose >= resistance * 0.99) {
+        positionEl.textContent = "接近壓力區（注意獲利了結與回落風險）";
+        positionEl.className = "value-down";
+      } else if (pos < 0.4) {
+        positionEl.textContent = "偏支撐區下半部（略偏多）";
+        positionEl.className = "value-up";
+      } else if (pos > 0.6) {
+        positionEl.textContent = "偏壓力區上半部（略偏空）";
+        positionEl.className = "value-down";
+      } else {
+        positionEl.textContent = "區間中段（盤整）";
+        positionEl.className = "value-neutral";
+      }
+    }
+
+    function renderChart(klines, symbol) {
+      const labels = klines.map(k => {
+        const d = new Date(k[0]);
+        return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+      });
+
+      const closes = klines.map(k => parseFloat(k[4]));
+
+      const ctx = document.getElementById("priceChart").getContext("2d");
+
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: `${symbol} 收盤價 (5m)`,
+              data: closes,
+              borderWidth: 1.5,
+              pointRadius: 0,
+              tension: 0.2
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              ticks: { color: "#9ca3af", maxTicksLimit: 8 }
+            },
+            y: {
+              ticks: { color: "#9ca3af" }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: "#e5e7eb" }
+            }
+          }
+        }
+      });
+    }
+
+    async function loadData() {
+      const symbol = symbolInput.value.trim().toUpperCase();
+      const limit = parseInt(limitSelect.value, 10) || 100;
+
+      currentPriceEl.textContent = supportEl.textContent =
+        resistanceEl.textContent = positionEl.textContent = "載入中…";
+
+      try {
+        const klines = await fetchKlines(symbol, "5m", limit);
+
+        if (!Array.isArray(klines) || klines.length === 0) {
+          throw new Error("無資料");
+        }
+
+        const last = klines[klines.length - 1];
+        const lastClose = parseFloat(last[4]);
+
+        const { support, resistance } = calcSupportResistance(klines);
+
+        updateSummary(lastClose, support, resistance);
+        renderChart(klines, symbol);
+      } catch (err) {
+        console.error(err);
+        currentPriceEl.textContent = "取得資料失敗";
+        supportEl.textContent = resistanceEl.textContent = positionEl.textContent = "--";
+      }
+    }
+
+    loadBtn.addEventListener("click", loadData);
+
+    // 載入頁面時先查一次
+    loadData();
+  </script>
+</body>
+</html>
