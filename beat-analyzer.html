@@ -126,12 +126,44 @@
       background: #101425;
       cursor: pointer;
     }
+    .watch-item-left {
+      display: flex;
+      flex-direction: column;
+    }
     .watch-item-symbol {
       font-size: 13px;
       font-weight: 600;
     }
     .watch-item-pos {
       font-size: 12px;
+    }
+    .watch-item-delete {
+      border-radius: 999px;
+      border: 1px solid #444;
+      background: #251018;
+      color: #f97373;
+      font-size: 11px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+    .watch-item-delete:hover {
+      background: #7f1d1d;
+      border-color: #f97373;
+    }
+    .watchlist-add-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+    .watchlist-add-row input {
+      flex: 1;
+      font-size: 13px;
+    }
+    .watchlist-hint {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 4px;
     }
     /* 週期按鈕列 */
     .tf-row {
@@ -228,13 +260,18 @@
       </div>
     </div>
 
-    <!-- 右側：多幣監控區 -->
+    <!-- 右側：多幣監控區（可新增 / 刪除） -->
     <div>
       <div class="card">
         <div class="watchlist-title">監控清單（點一下切換到該幣）</div>
-        <div class="watchlist" id="watchlist">
-          <!-- JS 產生 -->
+
+        <div class="watchlist-add-row">
+          <input id="watchAddInput" type="text" placeholder="輸入幣種，例如：BEATUSDT / BTCUSDT" />
+          <button id="watchAddBtn">新增</button>
         </div>
+        <div class="watchlist-hint">提示：幣種需為幣安現貨交易對 Symbol（USDT 報價為主）。</div>
+
+        <div class="watchlist" id="watchlist"></div>
       </div>
     </div>
   </div>
@@ -256,11 +293,39 @@
 
     const tfButtons = document.querySelectorAll(".tf-btn");
 
+    const watchAddInput = document.getElementById("watchAddInput");
+    const watchAddBtn   = document.getElementById("watchAddBtn");
+    const watchlistContainer = document.getElementById("watchlist");
+
     let priceChart, macdChart, rsiChart;
     let autoTimer = null;
     let currentInterval = "5m"; // 預設 5m
 
-    const watchlistSymbols = ["BEATUSDT", "BTCUSDT", "ETHUSDT"];
+    // 從 localStorage 讀取監控清單，沒有就用預設
+    function loadWatchlistFromStorage() {
+      try {
+        const raw = localStorage.getItem("beat_watchlist");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (e) {
+        console.warn("讀取 watchlist 失敗，使用預設值。", e);
+      }
+      return ["BEATUSDT", "BTCUSDT", "ETHUSDT"];
+    }
+
+    function saveWatchlistToStorage() {
+      try {
+        localStorage.setItem("beat_watchlist", JSON.stringify(watchlistSymbols));
+      } catch (e) {
+        console.warn("儲存 watchlist 失敗。", e);
+      }
+    }
+
+    let watchlistSymbols = loadWatchlistFromStorage();
 
     // --- API ---
     async function fetchKlines(symbol, interval, limit = 100) {
@@ -564,7 +629,7 @@
         const rsi = calcRSI(closes, 14);
         renderRsiChart(labels, rsi);
 
-        updateWatchlist(); // 右邊仍用 5m 概略看位置
+        updateWatchlist(); // 右邊列表（固定用 5m 概略看）
       } catch (err) {
         console.error(err);
         currentPriceEl.textContent = "取得資料失敗";
@@ -592,11 +657,11 @@
         const range = resistance - support;
         const pos   = (lastClose - support) / (range || 1);
         let posText;
-        if (lastClose <= support * 1.01)      posText = "支撐附近";
-        else if (lastClose >= resistance * 0.99) posText = "壓力附近";
-        else if (pos < 0.4)                  posText = "偏多區";
-        else if (pos > 0.6)                  posText = "偏空區";
-        else                                  posText = "盤整";
+        if (lastClose <= support * 1.01)          posText = "支撐附近";
+        else if (lastClose >= resistance * 0.99)  posText = "壓力附近";
+        else if (pos < 0.4)                       posText = "偏多區";
+        else if (pos > 0.6)                       posText = "偏空區";
+        else                                      posText = "盤整";
         return { symbol, lastClose, posText };
       } catch {
         return null;
@@ -604,16 +669,16 @@
     }
 
     async function updateWatchlist() {
-      const container = document.getElementById("watchlist");
-      container.innerHTML = "";
+      watchlistContainer.innerHTML = "";
       for (const sym of watchlistSymbols) {
         const itemData = await loadSymbolSummary(sym);
+
         const div  = document.createElement("div");
         div.className = "watch-item";
-        div.onclick = () => {
-          symbolInput.value = sym;
-          loadData(true);
-        };
+
+        // 左邊：symbol + 位置
+        const left = document.createElement("div");
+        left.className = "watch-item-left";
         const symSpan = document.createElement("span");
         symSpan.className = "watch-item-symbol";
         symSpan.textContent = sym;
@@ -625,11 +690,50 @@
         } else {
           posSpan.textContent = "載入失敗";
         }
+        left.appendChild(symSpan);
+        left.appendChild(posSpan);
 
-        div.appendChild(symSpan);
-        div.appendChild(posSpan);
-        container.appendChild(div);
+        // 右邊：刪除按鈕
+        const delBtn = document.createElement("button");
+        delBtn.className = "watch-item-delete";
+        delBtn.textContent = "✕";
+        delBtn.title = "刪除此幣種";
+        delBtn.addEventListener("click", (e) => {
+          e.stopPropagation(); // 避免觸發切換
+          const idx = watchlistSymbols.indexOf(sym);
+          if (idx >= 0) {
+            watchlistSymbols.splice(idx, 1);
+            saveWatchlistToStorage();
+            updateWatchlist();
+          }
+        });
+
+        // 點整行切換主圖
+        div.addEventListener("click", () => {
+          symbolInput.value = sym;
+          loadData(true);
+        });
+
+        div.appendChild(left);
+        div.appendChild(delBtn);
+        watchlistContainer.appendChild(div);
       }
+    }
+
+    // --- 新增幣種到監控清單 ---
+    function addSymbolToWatchlist() {
+      let sym = watchAddInput.value.trim().toUpperCase();
+      if (!sym) return;
+      if (!sym.endsWith("USDT")) {
+        // 幫忙補 USDT（你輸入 BEAT 也會變 BEATUSDT）
+        sym = sym + "USDT";
+      }
+      if (!watchlistSymbols.includes(sym)) {
+        watchlistSymbols.push(sym);
+        saveWatchlistToStorage();
+        updateWatchlist();
+      }
+      watchAddInput.value = "";
     }
 
     // --- 綁定事件 + 初始化 ---
@@ -655,6 +759,11 @@
 
     limitSelect.addEventListener("change", () => {
       loadData(true);
+    });
+
+    watchAddBtn.addEventListener("click", addSymbolToWatchlist);
+    watchAddInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") addSymbolToWatchlist();
     });
 
     // 頁面載入時先跑一次
