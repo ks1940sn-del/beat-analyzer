@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>加密貨幣 多週期支撐 / 壓力分析</title>
+  <title>BEAT 多週期支撐 / 壓力分析</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json" />
@@ -193,6 +193,39 @@
       color: white;
       font-weight: 600;
     }
+    /* 計算機樣式 */
+    .calc-title {
+      font-size: 14px;
+      margin-bottom: 6px;
+      color: #e5e7eb;
+      font-weight: 600;
+    }
+    .calc-section {
+      border-top: 1px solid #1f2937;
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+    .calc-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .calc-row label {
+      min-width: 90px;
+      font-size: 13px;
+      color: #a5acc7;
+    }
+    .calc-row input {
+      flex: 1;
+      font-size: 13px;
+    }
+    .calc-output {
+      font-size: 13px;
+      margin-top: 2px;
+    }
+    .calc-output span {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -260,7 +293,7 @@
       </div>
     </div>
 
-    <!-- 右側：多幣監控區（可新增 / 刪除） -->
+    <!-- 右側：多幣監控區 + 計算機 -->
     <div>
       <div class="card">
         <div class="watchlist-title">監控清單（點一下切換到該幣）</div>
@@ -272,6 +305,73 @@
         <div class="watchlist-hint">提示：幣種需為幣安現貨交易對 Symbol（USDT 報價為主）。</div>
 
         <div class="watchlist" id="watchlist"></div>
+      </div>
+
+      <!-- 倉位計算機 -->
+      <div class="card">
+        <div class="calc-title">倉位計算機</div>
+
+        <div class="calc-row">
+          <label for="feeRate">手續費率(單邊)%</label>
+          <input id="feeRate" type="number" step="0.01" value="0.1" />
+        </div>
+        <small>說明：0.1 代表 0.1%（預設幣安現貨單邊 0.1%，開倉與平倉各收一次）。</small>
+
+        <!-- 區塊 1：單次開/平倉收益 -->
+        <div class="calc-section">
+          <div class="calc-title">單次交易收益試算（現貨多單）</div>
+
+          <div class="calc-row">
+            <label for="openPrice">開倉價格</label>
+            <input id="openPrice" type="number" step="0.00001" placeholder="例如 0.73000" />
+          </div>
+          <div class="calc-row">
+            <label for="closePrice">平倉價格</label>
+            <input id="closePrice" type="number" step="0.00001" placeholder="例如 0.76000" />
+          </div>
+          <div class="calc-row">
+            <label for="amountUSDT">成交金額(USDT)</label>
+            <input id="amountUSDT" type="number" step="0.01" placeholder="例如 100（用多少 USDT 買入）" />
+          </div>
+          <button id="calcSingleBtn" style="margin-top:6px;">計算收益</button>
+
+          <div class="calc-output" id="singleResult">
+            <span>成交數量(幣)：--</span>
+            <span>毛利(未扣手續費)：--</span>
+            <span>手續費總額(USDT)：--</span>
+            <span>淨收益(USDT)：--</span>
+          </div>
+        </div>
+
+        <!-- 區塊 2：增加倉位後均價 -->
+        <div class="calc-section">
+          <div class="calc-title">增加倉位後的均價</div>
+
+          <div class="calc-row">
+            <label for="curAvgPrice">現持倉均價</label>
+            <input id="curAvgPrice" type="number" step="0.00001" placeholder="例如 0.72000" />
+          </div>
+          <div class="calc-row">
+            <label for="curAmountUSDT">現持倉成本(USDT)</label>
+            <input id="curAmountUSDT" type="number" step="0.01" placeholder="例如 200（目前花了多少 USDT）" />
+          </div>
+          <div class="calc-row">
+            <label for="addPrice">新增價格</label>
+            <input id="addPrice" type="number" step="0.00001" placeholder="例如 0.70000" />
+          </div>
+          <div class="calc-row">
+            <label for="addAmountUSDT">新增金額(USDT)</label>
+            <input id="addAmountUSDT" type="number" step="0.01" placeholder="例如 100（再買多少 USDT）" />
+          </div>
+
+          <button id="calcDCAButton" style="margin-top:6px;">計算新均價</button>
+
+          <div class="calc-output" id="dcaResult">
+            <span>新持倉總成本(USDT)：--</span>
+            <span>新持倉總幣數：--</span>
+            <span>新持倉均價：--</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -296,6 +396,21 @@
     const watchAddInput = document.getElementById("watchAddInput");
     const watchAddBtn   = document.getElementById("watchAddBtn");
     const watchlistContainer = document.getElementById("watchlist");
+
+    // 計算機 DOM
+    const feeRateInput      = document.getElementById("feeRate");
+    const openPriceInput    = document.getElementById("openPrice");
+    const closePriceInput   = document.getElementById("closePrice");
+    const amountUSDTInput   = document.getElementById("amountUSDT");
+    const calcSingleBtn     = document.getElementById("calcSingleBtn");
+    const singleResultEl    = document.getElementById("singleResult");
+
+    const curAvgPriceInput  = document.getElementById("curAvgPrice");
+    const curAmountUSDTInput= document.getElementById("curAmountUSDT");
+    const addPriceInput     = document.getElementById("addPrice");
+    const addAmountUSDTInput= document.getElementById("addAmountUSDT");
+    const calcDCAButton     = document.getElementById("calcDCAButton");
+    const dcaResultEl       = document.getElementById("dcaResult");
 
     let priceChart, macdChart, rsiChart;
     let autoTimer = null;
@@ -736,6 +851,64 @@
       watchAddInput.value = "";
     }
 
+    // --- 計算機：單次開/平倉收益 ---
+    function calcSingleTrade() {
+      const open  = parseFloat(openPriceInput.value);
+      const close = parseFloat(closePriceInput.value);
+      const amt   = parseFloat(amountUSDTInput.value);
+      const feeR  = parseFloat(feeRateInput.value);
+
+      if (!(open > 0) || !(close > 0) || !(amt > 0)) {
+        singleResultEl.innerHTML =
+          "<span>請輸入 開倉價 / 平倉價 / 成交金額(USDT)。</span>";
+        return;
+      }
+
+      const qty = amt / open;                  // 買到幣數
+      const grossSell = qty * close;           // 平倉毛金額
+      const grossProfit = grossSell - amt;     // 未扣手續費毛利
+
+      const feeRate = (feeR || 0) / 100;       // 轉成小數
+      const feeOpen  = amt * feeRate;          // 開倉手續費
+      const feeClose = grossSell * feeRate;    // 平倉手續費
+      const totalFee = feeOpen + feeClose;     // 總手續費
+      const netProfit = grossProfit - totalFee;
+
+      singleResultEl.innerHTML =
+        `<span>成交數量(幣)：${qty.toFixed(6)}</span>` +
+        `<span>毛利(未扣手續費)：${grossProfit.toFixed(4)} USDT</span>` +
+        `<span>手續費總額(USDT)：${totalFee.toFixed(4)} USDT</span>` +
+        `<span>淨收益(USDT)：${netProfit.toFixed(4)} USDT</span>`;
+    }
+
+    // --- 計算機：加倉後均價 ---
+    function calcDca() {
+      const curAvg   = parseFloat(curAvgPriceInput.value);
+      const curAmt   = parseFloat(curAmountUSDTInput.value);
+      const addPrice = parseFloat(addPriceInput.value);
+      const addAmt   = parseFloat(addAmountUSDTInput.value);
+
+      if (!(curAvg > 0) || !(curAmt >= 0) || !(addPrice > 0) || !(addAmt > 0)) {
+        dcaResultEl.innerHTML =
+          "<span>請輸入 現持倉均價 / 現持倉成本 / 新增價格 / 新增金額。</span>";
+        return;
+      }
+
+      // 現有幣數
+      const curQty = curAmt / curAvg;
+      // 新增幣數
+      const addQty = addAmt / addPrice;
+
+      const totalAmt = curAmt + addAmt;
+      const totalQty = curQty + addQty;
+      const newAvg   = totalAmt / totalQty;
+
+      dcaResultEl.innerHTML =
+        `<span>新持倉總成本(USDT)：${totalAmt.toFixed(4)} USDT</span>` +
+        `<span>新持倉總幣數：${totalQty.toFixed(6)}</span>` +
+        `<span>新持倉均價：${newAvg.toFixed(6)}</span>`;
+    }
+
     // --- 綁定事件 + 初始化 ---
 
     // 週期按鈕
@@ -766,6 +939,10 @@
       if (e.key === "Enter") addSymbolToWatchlist();
     });
 
+    // 計算機事件
+    calcSingleBtn.addEventListener("click", calcSingleTrade);
+    calcDCAButton.addEventListener("click", calcDca);
+
     // 頁面載入時先跑一次
     loadData(true);
     startAutoRefresh();
@@ -778,4 +955,3 @@
   </script>
 </body>
 </html>
-
