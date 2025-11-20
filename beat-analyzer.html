@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>BEAT 5 分鐘簡易支撐 / 壓力分析</title>
+  <title>BEAT 多週期支撐 / 壓力分析</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json" />
@@ -133,10 +133,38 @@
     .watch-item-pos {
       font-size: 12px;
     }
+    /* 週期按鈕列 */
+    .tf-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .tf-label {
+      font-size: 14px;
+      color: #a5acc7;
+      margin-right: 4px;
+    }
+    .tf-btn {
+      border-radius: 999px;
+      border: 1px solid #444;
+      padding: 4px 10px;
+      background: #101425;
+      color: #e5e7eb;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .tf-btn.active {
+      background: #2e7dfb;
+      border-color: #2e7dfb;
+      color: white;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
-  <h1>BEAT 5 分鐘簡易支撐 / 壓力分析</h1>
+  <h1>BEAT 多週期支撐 / 壓力分析</h1>
 
   <div class="layout">
     <!-- 左側：主要圖表區 -->
@@ -153,7 +181,16 @@
           </select>
           <button id="loadBtn">重新載入</button>
         </div>
-        <small>資料來源：Binance 公開 API（5m K 線）。僅供技術研究，非投資建議。自動刷新間隔：30 秒。</small>
+        <!-- 多週期按鈕：5m / 15m / 1H / 4H / 1D -->
+        <div class="tf-row">
+          <span class="tf-label">時間週期：</span>
+          <button class="tf-btn active" data-interval="5m">5m</button>
+          <button class="tf-btn" data-interval="15m">15m</button>
+          <button class="tf-btn" data-interval="1h">1H</button>
+          <button class="tf-btn" data-interval="4h">4H</button>
+          <button class="tf-btn" data-interval="1d">1D</button>
+        </div>
+        <small>資料來源：Binance 公開 API。時間週期可切換，MACD / RSI 亦使用相同週期。自動刷新間隔：30 秒（當前週期）。</small>
       </div>
 
       <div class="card">
@@ -196,7 +233,7 @@
       <div class="card">
         <div class="watchlist-title">監控清單（點一下切換到該幣）</div>
         <div class="watchlist" id="watchlist">
-          <!-- 這裡用 JS 填入 -->
+          <!-- JS 產生 -->
         </div>
       </div>
     </div>
@@ -208,22 +245,25 @@
     const AUTO_REFRESH_MS = 30000; // 自動刷新間隔（毫秒）
 
     const symbolInput = document.getElementById("symbol");
-    const limitSelect = document.getElementById("limit");
-    const loadBtn = document.getElementById("loadBtn");
+    const limitSelect  = document.getElementById("limit");
+    const loadBtn      = document.getElementById("loadBtn");
 
     const currentPriceEl = document.getElementById("currentPrice");
-    const supportEl = document.getElementById("support");
-    const resistanceEl = document.getElementById("resistance");
-    const positionEl = document.getElementById("position");
-    const breakoutMsgEl = document.getElementById("breakoutMsg");
+    const supportEl      = document.getElementById("support");
+    const resistanceEl   = document.getElementById("resistance");
+    const positionEl     = document.getElementById("position");
+    const breakoutMsgEl  = document.getElementById("breakoutMsg");
+
+    const tfButtons = document.querySelectorAll(".tf-btn");
 
     let priceChart, macdChart, rsiChart;
     let autoTimer = null;
+    let currentInterval = "5m"; // 預設 5m
 
     const watchlistSymbols = ["BEATUSDT", "BTCUSDT", "ETHUSDT"];
 
     // --- API ---
-    async function fetchKlines(symbol, interval = "5m", limit = 100) {
+    async function fetchKlines(symbol, interval, limit = 100) {
       const url = `${apiBase}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Binance API error: " + res.status);
@@ -232,12 +272,12 @@
 
     // --- 計算支撐 / 壓力 ---
     function calcSupportResistance(klines) {
-      const lows = klines.map(k => parseFloat(k[3]));
+      const lows  = klines.map(k => parseFloat(k[3]));
       const highs = klines.map(k => parseFloat(k[2]));
-      const sortAsc = arr => [...arr].sort((a, b) => a - b);
+      const sortAsc  = arr => [...arr].sort((a, b) => a - b);
       const sortDesc = arr => [...arr].sort((a, b) => b - a);
       const n = Math.min(5, klines.length);
-      const lowSamples = sortAsc(lows).slice(0, n);
+      const lowSamples  = sortAsc(lows).slice(0, n);
       const highSamples = sortDesc(highs).slice(0, n);
       const avg = arr => arr.reduce((s, v) => s + v, 0) / arr.length;
       return { support: avg(lowSamples), resistance: avg(highSamples) };
@@ -249,11 +289,8 @@
       let emaArr = [];
       let prev;
       values.forEach((v, i) => {
-        if (i === 0) {
-          prev = v;
-        } else {
-          prev = v * k + prev * (1 - k);
-        }
+        if (i === 0) prev = v;
+        else prev = v * k + prev * (1 - k);
         emaArr.push(prev);
       });
       return emaArr;
@@ -293,48 +330,48 @@
     function updateSummary(lastClose, support, resistance) {
       const format = v => (v || v === 0) ? v.toFixed(5) : "--";
       currentPriceEl.textContent = format(lastClose);
-      supportEl.textContent = format(support);
-      resistanceEl.textContent = format(resistance);
+      supportEl.textContent      = format(support);
+      resistanceEl.textContent   = format(resistance);
 
       if (!lastClose || !support || !resistance) {
         positionEl.textContent = "--";
-        positionEl.className = "value-neutral";
+        positionEl.className   = "value-neutral";
         breakoutMsgEl.textContent = "--";
-        breakoutMsgEl.className = "breakout neutral";
+        breakoutMsgEl.className   = "breakout neutral";
         return;
       }
 
       const range = resistance - support;
-      const pos = (lastClose - support) / (range || 1);
+      const pos   = (lastClose - support) / (range || 1);
 
       // 區間位置
       if (lastClose <= support * 1.01) {
         positionEl.textContent = "接近支撐區（容易反彈也容易跌破）";
-        positionEl.className = "value-up";
+        positionEl.className   = "value-up";
       } else if (lastClose >= resistance * 0.99) {
         positionEl.textContent = "接近壓力區（注意獲利了結與回落風險）";
-        positionEl.className = "value-down";
+        positionEl.className   = "value-down";
       } else if (pos < 0.4) {
         positionEl.textContent = "偏支撐區下半部（略偏多）";
-        positionEl.className = "value-up";
+        positionEl.className   = "value-up";
       } else if (pos > 0.6) {
         positionEl.textContent = "偏壓力區上半部（略偏空）";
-        positionEl.className = "value-down";
+        positionEl.className   = "value-down";
       } else {
         positionEl.textContent = "區間中段（盤整）";
-        positionEl.className = "value-neutral";
+        positionEl.className   = "value-neutral";
       }
 
       // 突破判斷
       if (lastClose > resistance * 1.01) {
         breakoutMsgEl.textContent = "已明顯突破壓力區，上攻動能較強，但容易回測壓力變支撐。";
-        breakoutMsgEl.className = "breakout up";
+        breakoutMsgEl.className   = "breakout up";
       } else if (lastClose < support * 0.99) {
         breakoutMsgEl.textContent = "已明顯跌破支撐區，注意續跌與反彈只當解套。";
-        breakoutMsgEl.className = "breakout down";
+        breakoutMsgEl.className   = "breakout down";
       } else {
         breakoutMsgEl.textContent = "目前仍在支撐與壓力區間內，屬於區間震盪。";
-        breakoutMsgEl.className = "breakout neutral";
+        breakoutMsgEl.className   = "breakout neutral";
       }
     }
 
@@ -349,7 +386,7 @@
       const ctx = document.getElementById("priceChart").getContext("2d");
       if (priceChart) priceChart.destroy();
 
-      const supportArr = closes.map(() => support);
+      const supportArr    = closes.map(() => support);
       const resistanceArr = closes.map(() => resistance);
 
       priceChart = new Chart(ctx, {
@@ -358,7 +395,7 @@
           labels,
           datasets: [
             {
-              label: `${symbol} 收盤價 (5m)`,
+              label: `${symbol} 收盤價 (${currentInterval})`,
               data: closes,
               borderWidth: 1.5,
               pointRadius: 0,
@@ -391,9 +428,7 @@
             }
           },
           plugins: {
-            legend: {
-              labels: { color: "#e5e7eb" }
-            }
+            legend: { labels: { color: "#e5e7eb" } }
           }
         }
       });
@@ -434,18 +469,14 @@
         options: {
           responsive: true,
           scales: {
-            x: {
-              ticks: { color: "#9ca3af", maxTicksLimit: 8 }
-            },
-            y: {
-              ticks: { color: "#9ca3af" }
-            }
+            x: { ticks: { color: "#9ca3af", maxTicksLimit: 8 } },
+            y: { ticks: { color: "#9ca3af" } }
           },
           plugins: {
             legend: { labels: { color: "#e5e7eb" } },
             title: {
               display: true,
-              text: "MACD (12,26,9)",
+              text: `MACD (12,26,9) ＠ ${currentInterval}`,
               color: "#e5e7eb"
             }
           }
@@ -465,7 +496,7 @@
           labels,
           datasets: [
             {
-              label: "RSI(14)",
+              label: `RSI(14) ＠ ${currentInterval}`,
               data: rsiClean,
               borderWidth: 1.5,
               pointRadius: 0,
@@ -476,9 +507,7 @@
         options: {
           responsive: true,
           scales: {
-            x: {
-              ticks: { color: "#9ca3af", maxTicksLimit: 8 }
-            },
+            x: { ticks: { color: "#9ca3af", maxTicksLimit: 8 } },
             y: {
               ticks: { color: "#9ca3af" },
               min: 0,
@@ -500,7 +529,7 @@
     // --- 主加載流程 ---
     async function loadData(showLoading = true) {
       const symbol = symbolInput.value.trim().toUpperCase();
-      const limit = parseInt(limitSelect.value, 10) || 100;
+      const limit  = parseInt(limitSelect.value, 10) || 100;
 
       if (showLoading) {
         currentPriceEl.textContent =
@@ -512,7 +541,7 @@
       }
 
       try {
-        const klines = await fetchKlines(symbol, "5m", limit);
+        const klines = await fetchKlines(symbol, currentInterval, limit);
         if (!Array.isArray(klines) || klines.length === 0) {
           throw new Error("無資料");
         }
@@ -535,13 +564,14 @@
         const rsi = calcRSI(closes, 14);
         renderRsiChart(labels, rsi);
 
-        // 更新 watchlist 顯示
-        updateWatchlist();
+        updateWatchlist(); // 右邊仍用 5m 概略看位置
       } catch (err) {
         console.error(err);
         currentPriceEl.textContent = "取得資料失敗";
-        supportEl.textContent = resistanceEl.textContent = positionEl.textContent = "--";
-        breakoutMsgEl.textContent = "--";
+        supportEl.textContent      = "--";
+        resistanceEl.textContent   = "--";
+        positionEl.textContent     = "--";
+        breakoutMsgEl.textContent  = "--";
       }
     }
 
@@ -551,7 +581,7 @@
       autoTimer = setInterval(() => loadData(false), AUTO_REFRESH_MS);
     }
 
-    // --- 右側多幣監控 ---
+    // --- 右側多幣監控 (固定 5m 短線概況) ---
     async function loadSymbolSummary(symbol) {
       try {
         const klines = await fetchKlines(symbol, "5m", 50);
@@ -560,13 +590,13 @@
         const lastClose = parseFloat(last[4]);
         const { support, resistance } = calcSupportResistance(klines);
         const range = resistance - support;
-        const pos = (lastClose - support) / (range || 1);
+        const pos   = (lastClose - support) / (range || 1);
         let posText;
-        if (lastClose <= support * 1.01) posText = "支撐附近";
+        if (lastClose <= support * 1.01)      posText = "支撐附近";
         else if (lastClose >= resistance * 0.99) posText = "壓力附近";
-        else if (pos < 0.4) posText = "偏多區";
-        else if (pos > 0.6) posText = "偏空區";
-        else posText = "盤整";
+        else if (pos < 0.4)                  posText = "偏多區";
+        else if (pos > 0.6)                  posText = "偏空區";
+        else                                  posText = "盤整";
         return { symbol, lastClose, posText };
       } catch {
         return null;
@@ -578,7 +608,7 @@
       container.innerHTML = "";
       for (const sym of watchlistSymbols) {
         const itemData = await loadSymbolSummary(sym);
-        const div = document.createElement("div");
+        const div  = document.createElement("div");
         div.className = "watch-item";
         div.onclick = () => {
           symbolInput.value = sym;
@@ -603,8 +633,29 @@
     }
 
     // --- 綁定事件 + 初始化 ---
-    loadBtn.addEventListener("click", () => loadData(true));
-    limitSelect.addEventListener("change", () => loadData(true));
+
+    // 週期按鈕
+    tfButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const interval = btn.getAttribute("data-interval");
+        currentInterval = interval;
+        // 切換 active 樣式
+        tfButtons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        // 重新載入資料
+        loadData(true);
+        startAutoRefresh();
+      });
+    });
+
+    loadBtn.addEventListener("click", () => {
+      loadData(true);
+      startAutoRefresh();
+    });
+
+    limitSelect.addEventListener("change", () => {
+      loadData(true);
+    });
 
     // 頁面載入時先跑一次
     loadData(true);
