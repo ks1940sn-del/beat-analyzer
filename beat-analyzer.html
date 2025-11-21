@@ -326,7 +326,7 @@
       <div class="card">
         <div class="calc-title">倉位計算機</div>
 
-        <!-- ✅ 新增的大框：整體倉位平倉淨收益 -->
+        <!-- ✅ 整體倉位平倉淨收益 -->
         <div id="totalProfitBox" class="total-profit-box">
           整體倉位平倉淨收益： --
         </div>
@@ -866,8 +866,8 @@
       watchAddInput.value = "";
     }
 
-    // --- 更新上方大框 ---
-    function updateTotalProfitBox(value, message) {
+    // --- 更新上方大框（含報酬率%） ---
+    function updateTotalProfitBox(value, roiPercent, message) {
       if (!totalProfitBox) return;
 
       if (message) {
@@ -880,8 +880,13 @@
         return;
       }
 
+      let roiText = "";
+      if (roiPercent !== null && roiPercent !== undefined && !isNaN(roiPercent)) {
+        roiText = `（報酬率： ${roiPercent.toFixed(2)}%）`;
+      }
+
       totalProfitBox.textContent =
-        `整體倉位平倉淨收益： ${value.toFixed(4)} USDT`;
+        `整體倉位平倉淨收益： ${value.toFixed(4)} USDT ${roiText}`;
     }
 
     // --- 計算機：單次開/平倉收益 ---
@@ -912,6 +917,18 @@
         `<span>毛利(未扣手續費)：${grossProfit.toFixed(4)} USDT</span>` +
         `<span>手續費總額(USDT)：${totalFee.toFixed(4)} USDT</span>` +
         `<span>淨收益(USDT)：${netProfit.toFixed(4)} USDT</span>`;
+
+      // 判斷加倉區是否有輸入：完全沒填才代表目前只有這一筆倉位
+      const hasDcaInput =
+        curAvgPriceInput.value.trim()   !== "" ||
+        curAmountUSDTInput.value.trim() !== "" ||
+        addPriceInput.value.trim()      !== "" ||
+        addAmountUSDTInput.value.trim() !== "";
+
+      if (!hasDcaInput) {
+        const roi = (amt > 0) ? (netProfit / amt) * 100 : null;
+        updateTotalProfitBox(netProfit, roi);
+      }
     }
 
     // --- 計算機：加倉後均價 + 整體平倉收益 ---
@@ -926,7 +943,7 @@
       if (!(curAvg > 0) || !(curAmt >= 0) || !(addPrice > 0) || !(addAmt > 0)) {
         dcaResultEl.innerHTML =
           "<span>請輸入 現持倉均價 / 現持倉成本 / 新增價格 / 新增金額。</span>";
-        updateTotalProfitBox(null);   // 重設大框
+        updateTotalProfitBox(null, null);
         return;
       }
 
@@ -943,7 +960,7 @@
         `<span>新持倉均價：${newAvg.toFixed(6)}</span>`;
 
       if (!(close > 0)) {
-        updateTotalProfitBox(null, "請先在上方輸入平倉價格");
+        updateTotalProfitBox(null, null, "請先在上方輸入平倉價格");
         return;
       }
 
@@ -952,8 +969,9 @@
       const grossProfit = grossSell - totalAmt;
       const feeClose = grossSell * feeRate;
       const netProfit = grossProfit - feeClose;
+      const roi = (totalAmt > 0) ? (netProfit / totalAmt) * 100 : null;
 
-      updateTotalProfitBox(netProfit);
+      updateTotalProfitBox(netProfit, roi);
     }
 
     // --- 綁定事件 + 初始化 ---
