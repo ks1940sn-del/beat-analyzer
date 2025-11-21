@@ -232,15 +232,31 @@
       border-radius: 10px;
       padding: 10px 12px;
       margin: 10px 0 6px 0;
-      font-size: 18px;                 /* 稍微縮小，避免被擠掉 */
+      font-size: 18px;
       line-height: 1.4;
       font-weight: 700;
       color: #f87171;                  /* 紅色字體 */
       background: rgba(34, 197, 94, 0.06);
       text-align: left;
-      white-space: normal;             /* 允許自動換行 */
-      overflow: visible;               /* 不要裁切 */
+      white-space: normal;
+      overflow: visible;
       text-overflow: unset;
+    }
+    /* ✅ 目前價格放大 + 趨勢顏色 */
+    #currentPrice {
+      font-size: 20px;
+    }
+    .price-up {
+      color: #4ade80;
+      font-weight: 700;
+    }
+    .price-down {
+      color: #f97373;
+      font-weight: 700;
+    }
+    .price-flat {
+      color: #e5e7eb;
+      font-weight: 700;
     }
   </style>
 </head>
@@ -279,7 +295,7 @@
         <div class="info-grid">
           <div class="info-item">
             <span class="label">目前價格</span>
-            <span id="currentPrice" class="value-neutral">--</span>
+            <span id="currentPrice" class="price-flat">--</span>
           </div>
           <div class="info-item">
             <span class="label">簡易支撐（近 N 根較低價平均）</span>
@@ -530,13 +546,38 @@
     }
 
     // --- 更新 summary + 突破判斷 ---
-    function updateSummary(lastClose, support, resistance) {
+    function updateSummary(lastClose, prevClose, support, resistance) {
       const format = v => (v || v === 0) ? v.toFixed(5) : "--";
-      currentPriceEl.textContent = format(lastClose);
-      supportEl.textContent      = format(support);
-      resistanceEl.textContent   = format(resistance);
+
+      // 目前價格 + 趨勢判斷
+      let trendText  = "";
+      let trendClass = "price-flat";
+
+      if (lastClose && prevClose && !isNaN(lastClose) && !isNaN(prevClose)) {
+        if (lastClose > prevClose) {
+          trendText  = "(上升)";
+          trendClass = "price-up";
+        } else if (lastClose < prevClose) {
+          trendText  = "(下跌)";
+          trendClass = "price-down";
+        } else {
+          trendText  = "(持平)";
+          trendClass = "price-flat";
+        }
+      } else {
+        trendText  = "";
+        trendClass = "price-flat";
+      }
+
+      currentPriceEl.textContent = `${format(lastClose)} ${trendText}`;
+      currentPriceEl.className   = trendClass;
+
+      supportEl.textContent    = format(support);
+      resistanceEl.textContent = format(resistance);
 
       if (!lastClose || !support || !resistance) {
+        currentPriceEl.textContent = "--";
+        currentPriceEl.className   = "price-flat";
         positionEl.textContent = "--";
         positionEl.className   = "value-neutral";
         breakoutMsgEl.textContent = "--";
@@ -747,8 +788,12 @@
           throw new Error("無資料");
         }
 
-        const last = klines[klines.length - 1];
+        const lastIdx   = klines.length - 1;
+        const last      = klines[lastIdx];
+        const prev      = klines[lastIdx - 1] || last;
         const lastClose = parseFloat(last[4]);
+        const prevClose = parseFloat(prev[4]);
+
         const { support, resistance } = calcSupportResistance(klines);
         const closes = klines.map(k => parseFloat(k[4]));
         const labels = klines.map(k => {
@@ -756,7 +801,7 @@
           return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
         });
 
-        updateSummary(lastClose, support, resistance);
+        updateSummary(lastClose, prevClose, support, resistance);
         renderPriceChart(klines, symbol, support, resistance);
 
         const { macdLine, signalLine, hist } = calcMACD(closes);
@@ -769,6 +814,7 @@
       } catch (err) {
         console.error(err);
         currentPriceEl.textContent = "取得資料失敗";
+        currentPriceEl.className   = "price-flat";
         supportEl.textContent      = "--";
         resistanceEl.textContent   = "--";
         positionEl.textContent     = "--";
@@ -920,7 +966,7 @@
         `<span>手續費總額(USDT)：${totalFee.toFixed(4)} USDT</span>` +
         `<span>淨收益(USDT)：${netProfit.toFixed(4)} USDT</span>`;
 
-      // 判斷加倉區是否有輸入：完全沒填才代表目前只有這一筆倉位
+      // 沒有加倉輸入時，就把這一筆當作整體倉位
       const hasDcaInput =
         curAvgPriceInput.value.trim()   !== "" ||
         curAmountUSDTInput.value.trim() !== "" ||
