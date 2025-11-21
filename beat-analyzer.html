@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>BEAT 多週期支撐 / 壓力分析</title>
+  <title>加密貨幣 多週期支撐 / 壓力分析</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- PWA manifest -->
   <link rel="manifest" href="manifest.json" />
@@ -232,19 +232,20 @@
       border-radius: 10px;
       padding: 10px 12px;
       margin: 10px 0 6px 0;
-      font-size: 22px;                 /* 比其他字再大 */
+      font-size: 18px;                 /* 稍微縮小，避免被擠掉 */
+      line-height: 1.4;
       font-weight: 700;
       color: #f87171;                  /* 紅色字體 */
       background: rgba(34, 197, 94, 0.06);
       text-align: left;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;             /* 允許自動換行 */
+      overflow: visible;               /* 不要裁切 */
+      text-overflow: unset;
     }
   </style>
 </head>
 <body>
-  <h1>BEAT 多週期支撐 / 壓力分析</h1>
+  <h1>加密貨幣 多週期支撐 / 壓力分析</h1>
 
   <div class="layout">
     <!-- 左側：主要圖表區 -->
@@ -252,7 +253,8 @@
       <div class="card">
         <div class="row">
           <label for="symbol">交易對：</label>
-          <input id="symbol" type="text" value="BEATUSDT" />
+          <!-- 預設改成 BTCUSDT -->
+          <input id="symbol" type="text" value="BTCUSDT" />
           <label for="limit">K 總數量：</label>
           <select id="limit">
             <option value="50">50 根 (短線)</option>
@@ -1003,6 +1005,7 @@
     calcSingleBtn.addEventListener("click", calcSingleTrade);
     calcDCAButton.addEventListener("click", calcDca);
 
+    // 初始化：預設 BTCUSDT + 5m
     loadData(true);
     startAutoRefresh();
     updateWatchlist();
