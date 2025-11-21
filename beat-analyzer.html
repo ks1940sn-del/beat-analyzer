@@ -317,6 +317,15 @@
         </div>
         <small>說明：0.1 代表 0.1%（預設幣安現貨單邊 0.1%，開倉與平倉各收一次）。</small>
 
+        <!-- 新增：整體倉位平倉淨收益顯示 -->
+        <div class="calc-section">
+          <div class="calc-title">整體倉位平倉淨收益試算</div>
+          <small>使用「增加倉位後均價」＋上方「平倉價格」，只扣平倉手續費。</small>
+          <div class="calc-output" id="overallResult">
+            <span>淨收益(USDT)：--</span>
+          </div>
+        </div>
+
         <!-- 區塊 1：單次開/平倉收益 -->
         <div class="calc-section">
           <div class="calc-title">單次交易收益試算（現貨多單）</div>
@@ -411,6 +420,7 @@
     const addAmountUSDTInput= document.getElementById("addAmountUSDT");
     const calcDCAButton     = document.getElementById("calcDCAButton");
     const dcaResultEl       = document.getElementById("dcaResult");
+    const overallResultEl   = document.getElementById("overallResult");
 
     let priceChart, macdChart, rsiChart;
     let autoTimer = null;
@@ -524,7 +534,6 @@
       const range = resistance - support;
       const pos   = (lastClose - support) / (range || 1);
 
-      // 區間位置
       if (lastClose <= support * 1.01) {
         positionEl.textContent = "接近支撐區（容易反彈也容易跌破）";
         positionEl.className   = "value-up";
@@ -542,7 +551,6 @@
         positionEl.className   = "value-neutral";
       }
 
-      // 突破判斷
       if (lastClose > resistance * 1.01) {
         breakoutMsgEl.textContent = "已明顯突破壓力區，上攻動能較強，但容易回測壓力變支撐。";
         breakoutMsgEl.className   = "breakout up";
@@ -791,7 +799,6 @@
         const div  = document.createElement("div");
         div.className = "watch-item";
 
-        // 左邊：symbol + 位置
         const left = document.createElement("div");
         left.className = "watch-item-left";
         const symSpan = document.createElement("span");
@@ -808,13 +815,12 @@
         left.appendChild(symSpan);
         left.appendChild(posSpan);
 
-        // 右邊：刪除按鈕
         const delBtn = document.createElement("button");
         delBtn.className = "watch-item-delete";
         delBtn.textContent = "✕";
         delBtn.title = "刪除此幣種";
         delBtn.addEventListener("click", (e) => {
-          e.stopPropagation(); // 避免觸發切換
+          e.stopPropagation();
           const idx = watchlistSymbols.indexOf(sym);
           if (idx >= 0) {
             watchlistSymbols.splice(idx, 1);
@@ -823,7 +829,6 @@
           }
         });
 
-        // 點整行切換主圖
         div.addEventListener("click", () => {
           symbolInput.value = sym;
           loadData(true);
@@ -840,7 +845,6 @@
       let sym = watchAddInput.value.trim().toUpperCase();
       if (!sym) return;
       if (!sym.endsWith("USDT")) {
-        // 幫忙補 USDT（你輸入 BEAT 也會變 BEATUSDT）
         sym = sym + "USDT";
       }
       if (!watchlistSymbols.includes(sym)) {
@@ -864,14 +868,14 @@
         return;
       }
 
-      const qty = amt / open;                  // 買到幣數
-      const grossSell = qty * close;           // 平倉毛金額
-      const grossProfit = grossSell - amt;     // 未扣手續費毛利
+      const qty = amt / open;
+      const grossSell = qty * close;
+      const grossProfit = grossSell - amt;
 
-      const feeRate = (feeR || 0) / 100;       // 轉成小數
-      const feeOpen  = amt * feeRate;          // 開倉手續費
-      const feeClose = grossSell * feeRate;    // 平倉手續費
-      const totalFee = feeOpen + feeClose;     // 總手續費
+      const feeRate = (feeR || 0) / 100;
+      const feeOpen  = amt * feeRate;
+      const feeClose = grossSell * feeRate;
+      const totalFee = feeOpen + feeClose;
       const netProfit = grossProfit - totalFee;
 
       singleResultEl.innerHTML =
@@ -881,22 +885,24 @@
         `<span>淨收益(USDT)：${netProfit.toFixed(4)} USDT</span>`;
     }
 
-    // --- 計算機：加倉後均價 ---
+    // --- 計算機：加倉後均價 + 整體平倉收益 ---
     function calcDca() {
       const curAvg   = parseFloat(curAvgPriceInput.value);
       const curAmt   = parseFloat(curAmountUSDTInput.value);
       const addPrice = parseFloat(addPriceInput.value);
       const addAmt   = parseFloat(addAmountUSDTInput.value);
+      const close    = parseFloat(closePriceInput.value);
+      const feeR     = parseFloat(feeRateInput.value);
 
       if (!(curAvg > 0) || !(curAmt >= 0) || !(addPrice > 0) || !(addAmt > 0)) {
         dcaResultEl.innerHTML =
           "<span>請輸入 現持倉均價 / 現持倉成本 / 新增價格 / 新增金額。</span>";
+        overallResultEl.innerHTML =
+          "<span>淨收益(USDT)：--</span>";
         return;
       }
 
-      // 現有幣數
       const curQty = curAmt / curAvg;
-      // 新增幣數
       const addQty = addAmt / addPrice;
 
       const totalAmt = curAmt + addAmt;
@@ -907,19 +913,31 @@
         `<span>新持倉總成本(USDT)：${totalAmt.toFixed(4)} USDT</span>` +
         `<span>新持倉總幣數：${totalQty.toFixed(6)}</span>` +
         `<span>新持倉均價：${newAvg.toFixed(6)}</span>`;
+
+      if (!(close > 0)) {
+        overallResultEl.innerHTML =
+          "<span>淨收益(USDT)：請先在上方輸入「平倉價格」。</span>";
+        return;
+      }
+
+      const feeRate = (feeR || 0) / 100;
+      const grossSell = totalQty * close;
+      const grossProfit = grossSell - totalAmt;
+      const feeClose = grossSell * feeRate;
+      const netProfit = grossProfit - feeClose;
+
+      overallResultEl.innerHTML =
+        `<span>淨收益(USDT)：${netProfit.toFixed(4)} USDT</span>` +
+        `<span>（毛利：${grossProfit.toFixed(4)}，平倉手續費：${feeClose.toFixed(4)}）</span>`;
     }
 
     // --- 綁定事件 + 初始化 ---
-
-    // 週期按鈕
     tfButtons.forEach(btn => {
       btn.addEventListener("click", () => {
         const interval = btn.getAttribute("data-interval");
         currentInterval = interval;
-        // 切換 active 樣式
         tfButtons.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        // 重新載入資料
         loadData(true);
         startAutoRefresh();
       });
@@ -939,16 +957,13 @@
       if (e.key === "Enter") addSymbolToWatchlist();
     });
 
-    // 計算機事件
     calcSingleBtn.addEventListener("click", calcSingleTrade);
     calcDCAButton.addEventListener("click", calcDca);
 
-    // 頁面載入時先跑一次
     loadData(true);
     startAutoRefresh();
     updateWatchlist();
 
-    // --- PWA Service Worker 註冊 ---
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("sw.js").catch(console.error);
     }
